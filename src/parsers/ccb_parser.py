@@ -53,19 +53,37 @@ class CCBCreditCardParser(BaseBillParser):
 
         # 找到表头和结束标记
         try:
-            header_row = ['交易日', '银行记账日', '卡号后四位', '交易描述', '交易币/金额', '结算币/金额']
+            # 查找表头行（精确匹配原始格式）
+            header_patterns = [
+                ['交易日', '银行记账日', '卡号后四位', '交易描述', '交易币/金额', '结算币/金额'],
+            ]
+
             idx_start = None
             idx_end = None
 
             for i, row in enumerate(rows):
-                if '交易日' in row and '交易描述' in row:
-                    idx_start = i
-                if '*** 结束 The End ***' in row or 'The End' in ' '.join(row):
+                # 检查是否是表头行
+                for header in header_patterns:
+                    if all(h in row for h in header):
+                        idx_start = i
+                        break
+                # 检查结束标记
+                row_text = ' '.join(row)
+                if '结束' in row_text or 'The End' in row_text:
                     idx_end = i
                     break
 
             if idx_start is None:
-                idx_start = 0
+                # 回退：查找包含"交易日"的行
+                for i, row in enumerate(rows):
+                    if '交易日' in row:
+                        idx_start = i
+                        break
+
+            if idx_start is None:
+                print("未找到表头行")
+                return pd.DataFrame(columns=["date", "amount", "description"])
+
             if idx_end is None:
                 idx_end = len(rows)
 
@@ -73,6 +91,17 @@ class CCBCreditCardParser(BaseBillParser):
             data_rows = [row for row in rows[idx_start:idx_end] if len(row) == 8]
 
             if not data_rows:
+                # 尝试其他列数
+                for col_count in [6, 7, 9]:
+                    data_rows = [row for row in rows[idx_start:idx_end] if len(row) == col_count]
+                    if data_rows:
+                        print(f"使用 {col_count} 列格式")
+                        break
+
+            if not data_rows:
+                print(f"未找到有效数据行，行数: {len(rows[idx_start:idx_end])}")
+                if rows[idx_start:idx_end]:
+                    print(f"示例行列数: {[len(r) for r in rows[idx_start:idx_start+5]]}")
                 return pd.DataFrame(columns=["date", "amount", "description"])
 
             # 跳过表头行

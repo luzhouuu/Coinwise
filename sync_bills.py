@@ -2,11 +2,19 @@
 """账单同步脚本 - 从邮箱获取账单并同步到 Firefly III"""
 import argparse
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 from src.config import Config
 from src.email_fetcher import EmailFetcher
 from src.firefly_client import FireflyClient
 from src.parsers import CCBCreditCardParser, CMBCreditCardParser
+
+
+def get_last_month_start():
+    """获取上个月第一天"""
+    now = datetime.now()
+    last_month = now - relativedelta(months=1)
+    return datetime(last_month.year, last_month.month, 1).strftime("%d-%b-%Y")
 
 
 def sync_bills(since_date: str = None, dry_run: bool = False):
@@ -18,8 +26,8 @@ def sync_bills(since_date: str = None, dry_run: bool = False):
         dry_run: 如果为 True，只解析不提交
     """
     if since_date is None:
-        now = datetime.now()
-        since_date = datetime(now.year, now.month, 1).strftime("%d-%b-%Y")
+        # 默认同步上个月的账单
+        since_date = get_last_month_start()
 
     print(f"开始同步账单，起始日期: {since_date}")
 
@@ -66,13 +74,45 @@ def sync_bills(since_date: str = None, dry_run: bool = False):
 
                     print(f"    找到 {len(df)} 条交易")
 
+                    # 分离正常交易和退款
+                    refunds = df[df["amount"] < 0].copy()
+                    normal = df[df["amount"] > 0].copy()
+
                     if not dry_run:
-                        count = firefly.batch_create_transactions(df)
-                        total_synced += count
-                        print(f"    同步成功: {count} 条")
+                        # 处理退款：删除对应的原消费记录
+                        for _, row in refunds.iterrows():
+                            refund_amount = abs(row["amount"])
+                            print(f"    处理退款: {row['description']} | ¥{refund_amount}")
+                            deleted = firefly.find_and_delete_transaction(
+                                date=row["date"],
+                                amount=refund_amount,
+                                description=row["description"]
+                            )
+                            if not deleted:
+                                print(f"    未找到对应的原交易")
+
+                        # 处理正常交易（去重）
+                        synced = 0
+                        skipped = 0
+                        for _, row in normal.iterrows():
+                            # 检查是否已存在
+                            if firefly.transaction_exists(row["date"], row["amount"], row["description"]):
+                                skipped += 1
+                                continue
+                            # 创建交易
+                            result = firefly.create_transaction(
+                                date=row["date"],
+                                amount=row["amount"],
+                                description=row["description"]
+                            )
+                            if result:
+                                synced += 1
+                        total_synced += synced
+                        print(f"    同步: {synced} 条, 跳过重复: {skipped} 条, 退款: {len(refunds)} 条")
                     else:
-                        print(f"    [dry-run] 将同步 {len(df)} 条")
-                        print(df.head())
+                        print(f"    [dry-run] 正常交易: {len(normal)} 条, 退款: {len(refunds)} 条")
+                        if not normal.empty:
+                            print(normal.head())
 
         finally:
             fetcher.logout()

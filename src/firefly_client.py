@@ -221,3 +221,101 @@ class FireflyClient:
         except Exception as e:
             print(f"获取汇总失败: {e}")
             return {}
+
+    def transaction_exists(self, date: str, amount: float, description: str) -> bool:
+        """
+        检查交易是否已存在（用于去重）
+
+        Args:
+            date: 交易日期
+            amount: 金额
+            description: 交易描述
+
+        Returns:
+            True 如果交易已存在
+        """
+        try:
+            # 搜索同一天的交易
+            response = requests.get(
+                f"{self.api_url}/transactions",
+                headers=self.headers,
+                params={"start": date, "end": date, "limit": 100}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get("data", []):
+                    for tx in item.get("attributes", {}).get("transactions", []):
+                        tx_amount = abs(float(tx.get("amount", 0)))
+                        tx_desc = tx.get("description", "")
+                        # 匹配金额和描述
+                        if abs(tx_amount - amount) < 0.01 and tx_desc == description:
+                            return True
+            return False
+        except Exception as e:
+            print(f"检查重复失败: {e}")
+            return False
+
+    def find_and_delete_transaction(self, date: str, amount: float, description: str) -> bool:
+        """
+        查找并删除匹配的交易（用于处理退款）
+
+        Args:
+            date: 原交易日期附近
+            amount: 原交易金额（正数）
+            description: 交易描述
+
+        Returns:
+            True 如果成功删除
+        """
+        try:
+            # 搜索最近30天内的交易
+            from datetime import datetime, timedelta
+            end_date = datetime.strptime(date, "%Y-%m-%d")
+            start_date = end_date - timedelta(days=60)
+
+            response = requests.get(
+                f"{self.api_url}/transactions",
+                headers=self.headers,
+                params={
+                    "start": start_date.strftime("%Y-%m-%d"),
+                    "end": end_date.strftime("%Y-%m-%d"),
+                    "limit": 200
+                }
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                for item in data.get("data", []):
+                    tx_id = item.get("id")
+                    for tx in item.get("attributes", {}).get("transactions", []):
+                        tx_amount = abs(float(tx.get("amount", 0)))
+                        tx_desc = tx.get("description", "")
+                        # 匹配金额和描述（描述可能略有不同，用包含关系）
+                        if abs(tx_amount - amount) < 0.01 and (
+                            tx_desc == description or
+                            description in tx_desc or
+                            tx_desc in description
+                        ):
+                            # 删除这笔交易
+                            return self.delete_transaction(tx_id)
+            return False
+        except Exception as e:
+            print(f"查找删除失败: {e}")
+            return False
+
+    def delete_transaction(self, transaction_id: str) -> bool:
+        """删除交易"""
+        try:
+            response = requests.delete(
+                f"{self.api_url}/transactions/{transaction_id}",
+                headers=self.headers
+            )
+            if response.status_code in [200, 204]:
+                print(f"    删除交易成功: {transaction_id}")
+                return True
+            else:
+                print(f"    删除失败: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"删除请求错误: {e}")
+            return False
