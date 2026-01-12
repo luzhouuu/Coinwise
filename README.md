@@ -1,6 +1,10 @@
-# CoinWise
+<p align="center">
+  <img src="frontend/public/logo-192.png" alt="CoinWise Logo" width="80" height="80">
+</p>
 
-智能家庭支出管理系统 - 自动从邮箱获取信用卡账单，AI 分析支出，可视化预算管理。
+<h1 align="center">CoinWise</h1>
+
+<p align="center">智能家庭支出管理系统 - 自动从邮箱获取信用卡账单，AI 分析支出，可视化预算管理。</p>
 
 ## 功能特性
 
