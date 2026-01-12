@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # CORS Settings
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Authentication Settings
+    admin_username: str = "admin"
+    admin_password: str = "changeme"
+    jwt_secret_key: str = "your-secret-key-change-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440  # 24 hours
+
     # Firefly Settings (from parent config)
     firefly_api_url: str = BaseConfig.FIREFLY_API_URL
     firefly_api_token: str = BaseConfig.FIREFLY_API_TOKEN

@@ -40,11 +40,7 @@ function navigateTo(path: string): void {
   <aside class="sidebar" :class="{ open }">
     <div class="sidebar-header">
       <div class="logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-          <circle cx="16" cy="16" r="14" fill="var(--color-primary)" />
-          <circle cx="16" cy="16" r="10" stroke="white" stroke-width="2" fill="none" />
-          <text x="16" y="21" text-anchor="middle" fill="white" font-size="12" font-weight="bold">$</text>
-        </svg>
+        <img src="/logo-192.png" alt="CoinWise" class="logo-img" />
         <span class="logo-text">CoinWise</span>
       </div>
     </div>
@@ -117,6 +113,13 @@ function navigateTo(path: string): void {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+.logo-img {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
 }
 
 .logo-text {

@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import and_, desc, func
+from sqlalchemy import and_, desc, func, text
 from sqlalchemy.orm import Session
 
 from app.database import CategoryModel, TransactionModel
@@ -267,8 +267,24 @@ class TransactionService:
                 else:
                     all_data.append({"date": date_key, "amount": 0, "count": 0})
                 current += relativedelta(months=1)
+        elif granularity == "day":
+            # For day granularity, fill in all days in the range
+            from datetime import timedelta
+            current = datetime(start_date.year, start_date.month, start_date.day)
+            end = datetime(end_date.year, end_date.month, end_date.day)
+            while current <= end:
+                date_key = current.strftime("%Y-%m-%d")
+                if date_key in result_dict:
+                    all_data.append({
+                        "date": date_key,
+                        "amount": result_dict[date_key]["amount"],
+                        "count": result_dict[date_key]["count"],
+                    })
+                else:
+                    all_data.append({"date": date_key, "amount": 0, "count": 0})
+                current += timedelta(days=1)
         else:
-            # For day/week granularity, just return actual results
+            # For week granularity, just return actual results
             all_data = [
                 {
                     "date": str(r.date),
@@ -279,3 +295,65 @@ class TransactionService:
             ]
 
         return all_data
+
+    def find_duplicates(self) -> List[dict]:
+        """Find duplicate transactions based on date, amount, and description."""
+        # Find groups with duplicates
+        duplicates_query = text("""
+            SELECT
+                DATE(transaction_date) as trans_date,
+                amount,
+                description,
+                COUNT(*) as duplicate_count,
+                GROUP_CONCAT(id) as ids
+            FROM transactions
+            GROUP BY DATE(transaction_date), amount, description
+            HAVING COUNT(*) > 1
+            ORDER BY transaction_date DESC
+        """)
+
+        results = self.db.execute(duplicates_query).fetchall()
+
+        duplicate_groups = []
+        for row in results:
+            duplicate_groups.append({
+                "date": str(row[0]),
+                "amount": row[1],
+                "description": row[2],
+                "count": row[3],
+                "ids": [int(id) for id in row[4].split(",")],
+            })
+
+        return duplicate_groups
+
+    def clean_duplicates(self) -> dict:
+        """Remove duplicate transactions, keeping the oldest one in each group."""
+        # First find all duplicate groups
+        duplicates = self.find_duplicates()
+
+        if not duplicates:
+            return {"deleted": 0, "groups_cleaned": 0}
+
+        ids_to_delete = []
+        for group in duplicates:
+            # Keep the first (oldest) ID, delete the rest
+            ids = sorted(group["ids"])
+            ids_to_delete.extend(ids[1:])  # Keep first, delete rest
+
+        if ids_to_delete:
+            # Delete records one by one (SQLite doesn't support IN with params well)
+            for id_to_delete in ids_to_delete:
+                self.db.query(TransactionModel).filter(
+                    TransactionModel.id == id_to_delete
+                ).delete()
+            self.db.commit()
+
+        return {
+            "deleted": len(ids_to_delete),
+            "groups_cleaned": len(duplicates),
+        }
+
+    def get_duplicate_count(self) -> int:
+        """Get total count of duplicate records."""
+        duplicates = self.find_duplicates()
+        return sum(group["count"] - 1 for group in duplicates)

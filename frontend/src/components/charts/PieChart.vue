@@ -19,7 +19,12 @@ interface Props {
   colors?: string[]
   donut?: boolean
   showLegend?: boolean
+  clickable?: boolean
 }
+
+const emit = defineEmits<{
+  (e: 'click', name: string, index: number): void
+}>()
 
 const props = withDefaults(defineProps<Props>(), {
   colors: () => [
@@ -28,7 +33,14 @@ const props = withDefaults(defineProps<Props>(), {
   ],
   donut: false,
   showLegend: true,
+  clickable: false,
 })
+
+function handleChartClick(params: any) {
+  if (props.clickable && params.dataIndex !== undefined) {
+    emit('click', params.name, params.dataIndex)
+  }
+}
 
 const chartOption = computed((): EChartsOption => {
   const seriesData = props.labels.map((label, index) => ({
@@ -103,8 +115,8 @@ const chartOption = computed((): EChartsOption => {
 </script>
 
 <template>
-  <div class="pie-chart">
-    <VChart :option="chartOption" autoresize />
+  <div class="pie-chart" :class="{ clickable }">
+    <VChart :option="chartOption" autoresize @click="handleChartClick" />
   </div>
 </template>
 
@@ -113,5 +125,9 @@ const chartOption = computed((): EChartsOption => {
   width: 100%;
   height: 100%;
   min-height: 200px;
+}
+
+.pie-chart.clickable :deep(canvas) {
+  cursor: pointer;
 }
 </style>

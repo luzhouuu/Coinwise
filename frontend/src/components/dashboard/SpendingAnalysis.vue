@@ -8,6 +8,40 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const analysis = ref<AnalysisResponse | null>(null)
 
+// Cache key for localStorage
+const CACHE_KEY = 'coinwise_analysis_cache'
+
+interface CachedAnalysis {
+  period: string
+  data: AnalysisResponse
+  timestamp: number
+}
+
+function getCachedAnalysis(): CachedAnalysis | null {
+  try {
+    const cached = localStorage.getItem(CACHE_KEY)
+    if (cached) {
+      return JSON.parse(cached)
+    }
+  } catch {
+    // Ignore cache errors
+  }
+  return null
+}
+
+function setCachedAnalysis(data: AnalysisResponse) {
+  try {
+    const cache: CachedAnalysis = {
+      period: data.period,
+      data,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // Ignore cache errors
+  }
+}
+
 // Simple markdown to HTML converter
 function parseMarkdown(text: string): string {
   return text
@@ -17,22 +51,20 @@ function parseMarkdown(text: string): string {
     // Italic: *text* or _text_
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/_([^_]+)_/g, '<em>$1</em>')
-    // Headers
-    .replace(/^### (.*$)/gm, '<h4>$1</h4>')
-    .replace(/^## (.*$)/gm, '<h3>$1</h3>')
-    .replace(/^# (.*$)/gm, '<h2>$1</h2>')
+    // Headers - compact
+    .replace(/^### (.*$)/gm, '<strong>$1</strong><br>')
+    .replace(/^## (.*$)/gm, '<strong>$1</strong><br>')
+    .replace(/^# (.*$)/gm, '<strong>$1</strong><br>')
     // Unordered lists
-    .replace(/^\s*[-*]\s+(.*)$/gm, '<li>$1</li>')
+    .replace(/^\s*[-*]\s+(.*)$/gm, '• $1<br>')
     // Numbered lists
-    .replace(/^\s*\d+\.\s+(.*)$/gm, '<li>$1</li>')
-    // Line breaks
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>')
-    // Wrap in paragraph
-    .replace(/^(.*)$/, '<p>$1</p>')
-    // Clean up list items
-    .replace(/(<li>.*<\/li>)/gs, '<ul>$1</ul>')
-    .replace(/<\/ul>\s*<ul>/g, '')
+    .replace(/^\s*(\d+)\.\s+(.*)$/gm, '$1. $2<br>')
+    // Multiple newlines -> single break
+    .replace(/\n{2,}/g, '<br>')
+    .replace(/\n/g, ' ')
+    // Clean up multiple <br>
+    .replace(/(<br>\s*){2,}/g, '<br>')
+    .replace(/^<br>|<br>$/g, '')
 }
 
 const analysisHtml = computed(() => {
@@ -40,13 +72,23 @@ const analysisHtml = computed(() => {
   return parseMarkdown(analysis.value.analysis)
 })
 
-async function fetchAnalysis() {
+async function fetchAnalysis(forceRefresh = false) {
+  // Check cache first (unless force refresh)
+  if (!forceRefresh) {
+    const cached = getCachedAnalysis()
+    if (cached) {
+      analysis.value = cached.data
+      return
+    }
+  }
+
   loading.value = true
   error.value = null
 
   try {
-    // Don't pass year/month to let backend auto-detect latest month with data
-    analysis.value = await getMonthlyAnalysis()
+    const result = await getMonthlyAnalysis()
+    analysis.value = result
+    setCachedAnalysis(result)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '分析请求失败'
   } finally {
@@ -55,7 +97,7 @@ async function fetchAnalysis() {
 }
 
 async function refresh() {
-  await fetchAnalysis()
+  await fetchAnalysis(true)
 }
 
 onMounted(() => {
@@ -203,7 +245,7 @@ onMounted(() => {
 }
 
 .card-body {
-  min-height: 100px;
+  min-height: 80px;
 }
 
 .loading-state {
@@ -249,7 +291,7 @@ onMounted(() => {
 .analysis-content {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .period-badge {
@@ -263,33 +305,8 @@ onMounted(() => {
 
 .analysis-text {
   font-size: var(--font-size-sm);
-  line-height: 1.7;
+  line-height: 1.5;
   opacity: 0.95;
-}
-
-.analysis-text :deep(p) {
-  margin: 0 0 var(--space-2) 0;
-}
-
-.analysis-text :deep(h2),
-.analysis-text :deep(h3),
-.analysis-text :deep(h4) {
-  margin: var(--space-3) 0 var(--space-2) 0;
-  font-weight: var(--font-weight-semibold);
-}
-
-.analysis-text :deep(h2) { font-size: var(--font-size-md); }
-.analysis-text :deep(h3) { font-size: var(--font-size-base); }
-.analysis-text :deep(h4) { font-size: var(--font-size-sm); }
-
-.analysis-text :deep(ul) {
-  margin: var(--space-2) 0;
-  padding-left: var(--space-4);
-  list-style: disc;
-}
-
-.analysis-text :deep(li) {
-  margin: var(--space-1) 0;
 }
 
 .analysis-text :deep(strong) {

@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  coinwise:
+    build: .
+    container_name: coinwise
+    ports:
+      - "30002:80"
+    environment:
+      # Authentication
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-super-secret-key-change-in-production}
+
+      # Email configuration (optional)
+      - EMAIL_IMAP_SERVER=${EMAIL_IMAP_SERVER:-}
+      - EMAIL_USERNAME_1=${EMAIL_USERNAME_1:-}
+      - EMAIL_PASSWORD_1=${EMAIL_PASSWORD_1:-}
+
+      # AI Analysis (optional)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      # Persist SQLite database
+      - coinwise_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  coinwise_data:

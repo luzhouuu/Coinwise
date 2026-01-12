@@ -4,9 +4,10 @@ from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.database import CategoryModel, get_db
+from app.database import CategoryModel, TransactionModel, get_db
 from app.models import CategoryStat, StatisticsSummary, TrendDataPoint
 from app.models.config import Category
 from app.services.transaction_service import TransactionService
@@ -94,3 +95,25 @@ async def get_categories(
         )
         for c in categories
     ]
+
+
+@router.get("/latest-month")
+async def get_latest_month(
+    db: Session = Depends(get_db),
+):
+    """Get the latest month with transaction data in the database."""
+    result = (
+        db.query(
+            func.strftime('%Y', TransactionModel.transaction_date).label('year'),
+            func.strftime('%m', TransactionModel.transaction_date).label('month'),
+        )
+        .filter(TransactionModel.transaction_type == "withdrawal")
+        .order_by(TransactionModel.transaction_date.desc())
+        .first()
+    )
+
+    if result and result.year and result.month:
+        return {"year": int(result.year), "month": int(result.month)}
+
+    now = datetime.now()
+    return {"year": now.year, "month": now.month}

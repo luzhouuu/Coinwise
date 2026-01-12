@@ -141,9 +141,54 @@ class SyncService:
     def _generate_email_id(
         self, email_date: str, description: str, amount: float
     ) -> str:
-        """Generate unique ID for email-parsed transaction."""
-        content = f"{email_date}|{description}|{amount}"
+        """Generate stable unique ID for email-parsed transaction.
+
+        Uses normalized values to ensure consistent IDs:
+        - Date: YYYY-MM-DD format (first 10 chars)
+        - Description: stripped whitespace
+        - Amount: absolute value with 2 decimal places
+        """
+        # Normalize date to YYYY-MM-DD
+        normalized_date = str(email_date)[:10]
+        # Normalize description
+        normalized_desc = description.strip()
+        # Normalize amount (2 decimal places, absolute value)
+        normalized_amount = f"{abs(amount):.2f}"
+
+        content = f"{normalized_date}|{normalized_desc}|{normalized_amount}"
         return hashlib.md5(content.encode()).hexdigest()
+
+    def _check_duplicate(
+        self, db: Session, trans_date, amount: float, description: str, source_email_id: str
+    ) -> bool:
+        """Check if transaction already exists using multiple criteria.
+
+        Returns True if duplicate found.
+        """
+        from sqlalchemy import func
+
+        # Method 1: Check by source_email_id (for email-imported records)
+        if source_email_id:
+            existing = (
+                db.query(TransactionModel)
+                .filter(TransactionModel.source_email_id == source_email_id)
+                .first()
+            )
+            if existing:
+                return True
+
+        # Method 2: Check by business fields (date + amount + description)
+        # This catches duplicates that may have different source_email_id
+        existing = (
+            db.query(TransactionModel)
+            .filter(
+                func.date(TransactionModel.transaction_date) == func.date(trans_date),
+                func.abs(TransactionModel.amount - amount) < 0.01,
+                TransactionModel.description == description.strip(),
+            )
+            .first()
+        )
+        return existing is not None
 
     def _match_category(self, db: Session, description: str) -> Optional[int]:
         """Match description to category using rules."""
@@ -306,16 +351,8 @@ class SyncService:
                                 str(trans_date), description, amount
                             )
 
-                            # Check for duplicates
-                            existing = (
-                                db.query(TransactionModel)
-                                .filter(
-                                    TransactionModel.source_email_id == source_email_id
-                                )
-                                .first()
-                            )
-
-                            if existing:
+                            # Check for duplicates using dual-method check
+                            if self._check_duplicate(db, trans_date, amount, description, source_email_id):
                                 self.skipped_count += 1
                                 continue
 

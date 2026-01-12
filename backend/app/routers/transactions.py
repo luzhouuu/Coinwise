@@ -163,3 +163,33 @@ async def delete_transaction(
         raise HTTPException(status_code=404, detail="Transaction not found")
 
     return {"message": "Transaction deleted successfully", "id": transaction_id}
+
+
+@router.get("/duplicates/list")
+async def get_duplicates(
+    db: Session = Depends(get_db),
+) -> dict:
+    """Get list of duplicate transactions grouped by date/amount/description."""
+    service = TransactionService(db)
+    duplicates = service.find_duplicates()
+    total_duplicates = sum(group["count"] - 1 for group in duplicates)
+
+    return {
+        "groups": duplicates,
+        "total_duplicate_records": total_duplicates,
+        "groups_count": len(duplicates),
+    }
+
+
+@router.post("/duplicates/clean")
+async def clean_duplicates(
+    db: Session = Depends(get_db),
+) -> dict:
+    """Remove duplicate transactions, keeping the oldest one in each group."""
+    service = TransactionService(db)
+    result = service.clean_duplicates()
+
+    return {
+        "message": f"Cleaned {result['deleted']} duplicate records from {result['groups_cleaned']} groups",
+        **result,
+    }

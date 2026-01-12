@@ -56,3 +56,7 @@ t.csv
 
 # Claude Code
 .claude/
+
+# Archives
+*.tar.gz
+*.zip

@@ -23,17 +23,32 @@ const dateRangeOptions = [
 ]
 const selectedRange = ref('3months')
 
+// Get display label for current date range
+const rangeLabel = computed(() => {
+  const opt = dateRangeOptions.find(o => o.value === selectedRange.value)
+  return opt?.label || '近3月'
+})
+
 onMounted(() => {
   updateDateRange()
 })
 
-function updateDateRange() {
+async function updateDateRange() {
   const now = new Date()
   let start: Date
+  let end: Date = now
+  let granularity: 'day' | 'month' = 'month'
+
+  // 所有范围都使用按天显示
+  granularity = 'day'
 
   switch (selectedRange.value) {
     case 'month':
-      start = new Date(now.getFullYear(), now.getMonth(), 1)
+      // 获取数据库中最新有数据的月份，而不是当前日历月份
+      const latest = await store.fetchLatestMonth()
+      start = new Date(latest.year, latest.month - 1, 1)
+      // 设置为该月的最后一天
+      end = new Date(latest.year, latest.month, 0)
       break
     case '3months':
       start = new Date(now.getFullYear(), now.getMonth() - 2, 1)
@@ -49,8 +64,8 @@ function updateDateRange() {
   }
 
   const startDate = start.toISOString().split('T')[0] ?? ''
-  const endDate = now.toISOString().split('T')[0] ?? ''
-  store.setDateRange(startDate, endDate)
+  const endDate = end.toISOString().split('T')[0] ?? ''
+  store.setDateRange(startDate, endDate, granularity)
 }
 
 function onRangeChange() {
@@ -80,18 +95,69 @@ const netBalance = computed(() => {
 const categoryLabels = computed(() => store.categoryStats.map(c => c.category))
 const categoryData = computed(() => store.categoryStats.map(c => c.amount))
 const categoryColors = computed((): string[] => {
-  const colors = ['#007AFF', '#34C759', '#FF9500', '#FF3B30', '#5AC8FA', '#AF52DE', '#FF2D55', '#A2845E']
+  // 使用更有区分度的颜色，避免相似颜色相邻
+  const colors = [
+    '#007AFF', // 蓝色
+    '#34C759', // 绿色
+    '#FF9500', // 橙色
+    '#FF3B30', // 红色
+    '#5856D6', // 紫色
+    '#FF2D55', // 粉红
+    '#A2845E', // 棕色
+    '#00C7BE', // 青色
+    '#FFD60A', // 黄色
+    '#8E8E93', // 灰色
+    '#30B0C7', // 天蓝
+    '#FF6482', // 珊瑚色
+  ]
   return store.categoryStats.map((_, i) => colors[i % colors.length] ?? '#007AFF')
 })
 
 const trendLabels = computed((): string[] => store.trendData.map(t => {
   const parts = t.date.split('-')
+  // 按天显示：显示 "12/1" 格式
   const month = parts[1] ?? ''
-  return i18n.isZh ? `${month}月` : t.date
+  const day = parts[2] ?? ''
+  return `${month}/${day}`
 }))
+
+// 点击图表某天，跳转到该天的交易列表
+function onTrendClick(index: number) {
+  const trendItem = store.trendData[index]
+  if (trendItem) {
+    router.push({
+      path: '/transactions',
+      query: { date: trendItem.date }
+    })
+  }
+}
 const trendDatasets = computed(() => [{
   label: i18n.isZh ? '支出' : 'Expense',
   data: store.trendData.map(t => t.amount),
+  color: '#007AFF'
+}])
+
+// 将按天数据聚合为按月数据（用于柱形图）
+const monthlyTrendData = computed(() => {
+  const monthMap = new Map<string, number>()
+  store.trendData.forEach(t => {
+    const parts = t.date.split('-')
+    const monthKey = `${parts[0]}-${parts[1]}`
+    monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + t.amount)
+  })
+  return Array.from(monthMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([month, amount]) => ({ month, amount }))
+})
+
+const monthlyLabels = computed((): string[] => monthlyTrendData.value.map(t => {
+  const parts = t.month.split('-')
+  return `${parts[1]}月`
+}))
+
+const monthlyDatasets = computed(() => [{
+  label: i18n.isZh ? '支出' : 'Expense',
+  data: monthlyTrendData.value.map(t => t.amount),
   color: '#007AFF'
 }])
 
@@ -104,6 +170,19 @@ function goToTransactions() {
 
 function goToSpendingPlan() {
   router.push('/spending-plan')
+}
+
+function onCategoryClick(categoryName: string) {
+  // Find category ID by name
+  const category = store.categories.find(c => c.name === categoryName)
+  const query: Record<string, string | number> = {
+    start_date: store.dateRange.start,
+    end_date: store.dateRange.end,
+  }
+  if (category) {
+    query.category_id = category.id
+  }
+  router.push({ path: '/transactions', query })
 }
 </script>
 
@@ -217,7 +296,7 @@ function goToSpendingPlan() {
       <!-- Charts Row -->
       <div class="charts-row">
         <!-- Spending Trend Chart -->
-        <ChartCard :title="i18n.isZh ? '支出趋势' : 'Spending Trend'" height="280px">
+        <ChartCard :title="i18n.isZh ? `支出趋势 (${rangeLabel})` : `Spending Trend (${rangeLabel})`" height="300px">
           <template #actions>
             <button class="chart-action-btn" @click="goToSpendingPlan">
               {{ i18n.isZh ? '查看预算' : 'View Budget' }}
@@ -230,6 +309,9 @@ function goToSpendingPlan() {
               :show-legend="false"
               :smooth="true"
               :fill-opacity="0.2"
+              :scrollable="true"
+              :clickable="true"
+              @click="onTrendClick"
             />
           </div>
           <div v-else class="chart-empty">
@@ -238,7 +320,7 @@ function goToSpendingPlan() {
         </ChartCard>
 
         <!-- Category Pie Chart -->
-        <ChartCard :title="i18n.isZh ? '分类占比' : 'Category Breakdown'" height="280px">
+        <ChartCard :title="i18n.isZh ? `分类占比 (${rangeLabel})` : `Category Breakdown (${rangeLabel})`" height="280px">
           <div v-if="store.categoryStats.length > 0" class="chart-container">
             <PieChart
               :labels="categoryLabels"
@@ -246,6 +328,8 @@ function goToSpendingPlan() {
               :colors="categoryColors"
               :donut="true"
               :show-legend="true"
+              :clickable="true"
+              @click="onCategoryClick"
             />
           </div>
           <div v-else class="chart-empty">
@@ -259,13 +343,14 @@ function goToSpendingPlan() {
         <!-- Top Categories List -->
         <div class="card category-card">
           <div class="card-header">
-            <h3 class="card-title">{{ i18n.isZh ? 'Top 5 消费分类' : 'Top 5 Categories' }}</h3>
+            <h3 class="card-title">{{ i18n.isZh ? `Top 5 消费分类 (${rangeLabel})` : `Top 5 Categories (${rangeLabel})` }}</h3>
           </div>
           <div v-if="topCategories.length > 0" class="category-list">
             <div
               v-for="(cat, index) in topCategories"
               :key="cat.category"
-              class="category-item"
+              class="category-item clickable"
+              @click="onCategoryClick(cat.category)"
             >
               <div class="category-rank">{{ index + 1 }}</div>
               <div class="category-info">
@@ -298,19 +383,15 @@ function goToSpendingPlan() {
         <!-- Monthly Comparison Bar Chart -->
         <div class="card trend-card">
           <div class="card-header">
-            <h3 class="card-title">{{ i18n.isZh ? '月度对比' : 'Monthly Comparison' }}</h3>
+            <h3 class="card-title">{{ i18n.isZh ? `月度对比 (${rangeLabel})` : `Monthly Comparison (${rangeLabel})` }}</h3>
             <button class="chart-action-btn" @click="goToTransactions">
               {{ i18n.isZh ? '查看全部' : 'View All' }}
             </button>
           </div>
-          <div v-if="store.trendData.length > 0" class="bar-chart-container">
+          <div v-if="monthlyTrendData.length > 0" class="bar-chart-container">
             <BarChart
-              :labels="trendLabels"
-              :datasets="[{
-                label: i18n.isZh ? '支出' : 'Expense',
-                data: store.trendData.map(t => t.amount),
-                color: '#007AFF'
-              }]"
+              :labels="monthlyLabels"
+              :datasets="monthlyDatasets"
               :show-legend="false"
             />
           </div>
@@ -585,6 +666,18 @@ function goToSpendingPlan() {
   grid-template-rows: auto auto;
   gap: var(--space-2);
   align-items: center;
+}
+
+.category-item.clickable {
+  cursor: pointer;
+  padding: var(--space-2);
+  margin: calc(-1 * var(--space-2));
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+
+.category-item.clickable:hover {
+  background: var(--color-background);
 }
 
 .category-rank {

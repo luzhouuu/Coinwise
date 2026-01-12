@@ -2,13 +2,16 @@
 /**
  * Transactions list view with filtering, pagination, and manual entry.
  */
-import { onMounted, ref, reactive } from 'vue';
+import { onMounted, ref, reactive, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { useTransactionStore } from '@/stores/transactions';
 import { useConfigStore } from '@/stores/config';
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue';
 import EmptyState from '@/components/common/EmptyState.vue';
 import type { TransactionCreate } from '@/api/transactions';
 
+const route = useRoute();
+const router = useRouter();
 const transactionStore = useTransactionStore();
 const configStore = useConfigStore();
 
@@ -31,8 +34,51 @@ const newTransaction = reactive<TransactionCreate>({
 });
 
 onMounted(() => {
-  transactionStore.fetchTransactions();
   configStore.fetchCategories();
+
+  // Check for category_id in URL query
+  const categoryIdParam = route.query.category_id;
+  if (categoryIdParam) {
+    const catId = Number(categoryIdParam);
+    if (!isNaN(catId)) {
+      selectedCategoryId.value = catId;
+      transactionStore.setFilter('category_id', catId);
+    }
+  }
+
+  // Check for date range in URL query
+  const startDateParam = route.query.start_date;
+  const endDateParam = route.query.end_date;
+  const dateParam = route.query.date;
+
+  if (startDateParam && typeof startDateParam === 'string') {
+    startDate.value = startDateParam;
+    transactionStore.setFilter('start_date', startDateParam);
+  }
+  if (endDateParam && typeof endDateParam === 'string') {
+    endDate.value = endDateParam;
+    transactionStore.setFilter('end_date', endDateParam);
+  }
+  // Single day filter (for clicking on trend chart)
+  if (dateParam && typeof dateParam === 'string') {
+    startDate.value = dateParam;
+    endDate.value = dateParam;
+    transactionStore.setFilter('start_date', dateParam);
+    transactionStore.setFilter('end_date', dateParam);
+  }
+
+  transactionStore.fetchTransactions();
+});
+
+// Watch for route changes to update filter
+watch(() => route.query.category_id, (newCatId) => {
+  if (newCatId) {
+    const catId = Number(newCatId);
+    if (!isNaN(catId)) {
+      selectedCategoryId.value = catId;
+      transactionStore.setFilter('category_id', catId);
+    }
+  }
 });
 
 function formatCurrency(value: number): string {
@@ -78,6 +124,8 @@ function resetFilters(): void {
   startDate.value = '';
   endDate.value = '';
   transactionStore.resetFilters();
+  // Clear URL query params
+  router.replace({ query: {} });
 }
 
 async function handleDelete(id: number): Promise<void> {

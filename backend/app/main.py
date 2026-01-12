@@ -10,7 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import SessionLocal, init_db, init_default_categories
-from app.routers import analysis, budgets, config, statistics, sync, transactions
+from app.routers import analysis, auth, budgets, chat, config, statistics, sync, transactions
+from app.services.scheduler import init_scheduler, shutdown_scheduler
 
 
 @asynccontextmanager
@@ -24,7 +25,11 @@ async def lifespan(app: FastAPI):
         init_default_categories(db)
     finally:
         db.close()
+    # Start scheduler for automated sync
+    init_scheduler()
     yield
+    # Shutdown scheduler on exit
+    shutdown_scheduler()
 
 app = FastAPI(
     title=settings.api_title,
@@ -74,6 +79,16 @@ app.include_router(
     analysis.router,
     prefix=f"{settings.api_prefix}",
     tags=["analysis"],
+)
+app.include_router(
+    auth.router,
+    prefix=f"{settings.api_prefix}/auth",
+    tags=["auth"],
+)
+app.include_router(
+    chat.router,
+    prefix=f"{settings.api_prefix}",
+    tags=["chat"],
 )
 
 

@@ -77,3 +77,16 @@ export async function getCategories(): Promise<Category[]> {
   const response = await apiClient.get<Category[]>('/statistics/categories');
   return response.data;
 }
+
+export interface LatestMonth {
+  year: number;
+  month: number;
+}
+
+/**
+ * Get the latest month with data in the database.
+ */
+export async function getLatestMonth(): Promise<LatestMonth> {
+  const response = await apiClient.get<LatestMonth>('/statistics/latest-month');
+  return response.data;
+}
