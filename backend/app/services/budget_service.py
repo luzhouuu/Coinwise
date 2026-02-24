@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
-from app.database import BudgetGoalModel, CategoryModel, TransactionModel
+from app.database import BudgetGoalModel, CategoryModel, TransactionBlacklistModel, TransactionModel
 
 
 class BudgetService:
@@ -15,6 +15,18 @@ class BudgetService:
     def __init__(self, db: Session):
         """Initialize service with database session."""
         self.db = db
+
+    def _get_blacklist_patterns(self) -> list:
+        """获取活跃的黑名单规则"""
+        return self.db.query(TransactionBlacklistModel).filter(
+            TransactionBlacklistModel.is_active == 1
+        ).all()
+
+    def _apply_blacklist_filter(self, query):
+        """排除黑名单中的交易"""
+        for rule in self._get_blacklist_patterns():
+            query = query.filter(~TransactionModel.description.contains(rule.pattern))
+        return query
 
     def get_budgets(
         self,
@@ -118,7 +130,7 @@ class BudgetService:
         # Get all budgets for this month
         budgets = self.get_budgets(year=year, month=month)
 
-        # Get spending by category for this month
+        # Get spending by category for this month (excluding blacklisted)
         spending_query = (
             self.db.query(
                 TransactionModel.category_id,
@@ -131,8 +143,9 @@ class BudgetService:
                     TransactionModel.transaction_type == "withdrawal",
                 )
             )
-            .group_by(TransactionModel.category_id)
         )
+        spending_query = self._apply_blacklist_filter(spending_query)
+        spending_query = spending_query.group_by(TransactionModel.category_id)
         spending_by_category = {r.category_id: abs(r.spent) for r in spending_query.all()}
 
         # Build summary items
@@ -204,7 +217,8 @@ class BudgetService:
                 else:
                     end_date = datetime(y, m + 1, 1)
 
-                spent = (
+                # Query spending with blacklist filter
+                query = (
                     self.db.query(func.sum(TransactionModel.amount))
                     .filter(
                         and_(
@@ -214,8 +228,9 @@ class BudgetService:
                             TransactionModel.transaction_type == "withdrawal",
                         )
                     )
-                    .scalar()
                 )
+                query = self._apply_blacklist_filter(query)
+                spent = query.scalar()
                 data.append({
                     "month": f"{y}-{m:02d}",
                     "amount": abs(spent) if spent else 0,

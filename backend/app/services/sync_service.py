@@ -31,6 +31,7 @@ from app.database import (
     TransactionModel,
 )
 from app.models import SyncStatus, SyncStatusResponse
+from app.services.categorizer import Categorizer
 
 
 def get_last_month_start() -> str:
@@ -46,10 +47,7 @@ def create_email_fetcher(email: str, password: str, imap_server: str, imap_port:
     """Create email fetcher with custom server settings."""
     from firefly_bill_sync.email_fetcher import EmailFetcher
 
-    fetcher = EmailFetcher(email, password)
-    fetcher.IMAP_SERVER = imap_server
-    fetcher.IMAP_PORT = imap_port
-    return fetcher
+    return EmailFetcher(email, password, imap_server=imap_server, imap_port=imap_port)
 
 
 class SyncService:
@@ -146,14 +144,14 @@ class SyncService:
         Uses normalized values to ensure consistent IDs:
         - Date: YYYY-MM-DD format (first 10 chars)
         - Description: stripped whitespace
-        - Amount: absolute value with 2 decimal places
+        - Amount: 2 decimal places (sign preserved to differentiate refunds)
         """
         # Normalize date to YYYY-MM-DD
         normalized_date = str(email_date)[:10]
         # Normalize description
         normalized_desc = description.strip()
-        # Normalize amount (2 decimal places, absolute value)
-        normalized_amount = f"{abs(amount):.2f}"
+        # Normalize amount (2 decimal places, keep sign for refund differentiation)
+        normalized_amount = f"{amount:.2f}"
 
         content = f"{normalized_date}|{normalized_desc}|{normalized_amount}"
         return hashlib.md5(content.encode()).hexdigest()
@@ -192,6 +190,7 @@ class SyncService:
 
     def _match_category(self, db: Session, description: str) -> Optional[int]:
         """Match description to category using rules."""
+        # Priority 1: Database rules (user-defined)
         rules = (
             db.query(CategoryRuleModel)
             .order_by(CategoryRuleModel.priority.desc())
@@ -200,7 +199,10 @@ class SyncService:
         for rule in rules:
             if re.search(rule.pattern, description, re.IGNORECASE):
                 return rule.category_id
-        return None
+
+        # Priority 2: Fallback to hardcoded categorizer
+        categorizer = Categorizer(db)
+        return categorizer.categorize(description)
 
     def _get_parser_for_bank(self, bank_type: str):
         """Get parser instance for bank type."""
@@ -354,13 +356,6 @@ class SyncService:
                             # Check for duplicates using dual-method check
                             if self._check_duplicate(db, trans_date, amount, description, source_email_id):
                                 self.skipped_count += 1
-                                continue
-
-                            # Handle refunds (negative amounts)
-                            if amount < 0:
-                                await self._log(
-                                    f"    跳过退款: {description} | ¥{abs(amount)}"
-                                )
                                 continue
 
                             if not dry_run:

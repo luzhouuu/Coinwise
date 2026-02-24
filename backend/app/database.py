@@ -83,9 +83,12 @@ class EmailAccountModel(Base):
     """Email account configuration."""
 
     __tablename__ = "email_accounts"
+    __table_args__ = (
+        UniqueConstraint('email', 'bank_type', name='uq_email_bank'),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    email = Column(String(200), nullable=False, unique=True)
+    email = Column(String(200), nullable=False)
     imap_server = Column(String(200), nullable=False)
     imap_port = Column(Integer, default=993)
     password = Column(String(500), nullable=False)  # Should be encrypted
@@ -108,6 +111,18 @@ class SyncLogModel(Base):
     total_synced = Column(Integer, default=0)
     total_skipped = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
+
+
+class TransactionBlacklistModel(Base):
+    """交易黑名单规则，用于排除特定交易不计入统计"""
+
+    __tablename__ = "transaction_blacklist"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pattern = Column(String(200), nullable=False, unique=True)
+    reason = Column(String(500), nullable=True)
+    is_active = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class BudgetGoalModel(Base):

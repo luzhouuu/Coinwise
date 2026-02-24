@@ -13,10 +13,10 @@ LOCAL_API_URL = "http://localhost:8000/api/v1"
 
 
 def get_months_ago_start(months: int = 6):
-    """获取N个月前的第一天"""
+    """获取N个月前的15号（账单周期起始日）"""
     now = datetime.now()
     target = now - relativedelta(months=months)
-    return datetime(target.year, target.month, 1).strftime("%d-%b-%Y")
+    return datetime(target.year, target.month, 15).strftime("%d-%b-%Y")
 
 
 def transaction_exists(date_str: str, amount: float, description: str) -> bool:
@@ -115,8 +115,7 @@ def sync_bills(months: int = 6, dry_run: bool = False):
                     if df.empty:
                         continue
 
-                    # 只处理正金额交易（支出）
-                    normal = df[df["amount"] > 0].copy()
+                    normal = df.copy()
 
                     if normal.empty:
                         continue

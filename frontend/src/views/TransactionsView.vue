@@ -274,8 +274,8 @@ async function handleSubmit(): Promise<void> {
               </span>
             </div>
           </div>
-          <div class="tx-amount" :class="tx.transaction_type">
-            {{ tx.transaction_type === 'deposit' ? '+' : '-' }}{{ formatCurrency(tx.amount) }}
+          <div class="tx-amount" :class="[tx.transaction_type, { refund: tx.amount < 0 }]">
+            {{ tx.amount < 0 ? '+' : (tx.transaction_type === 'deposit' ? '+' : '-') }}{{ formatCurrency(Math.abs(tx.amount)) }}
           </div>
         </div>
         <button
@@ -589,7 +589,8 @@ async function handleSubmit(): Promise<void> {
   color: var(--color-error);
 }
 
-.tx-amount.deposit {
+.tx-amount.deposit,
+.tx-amount.refund {
   color: var(--color-success);
 }
 

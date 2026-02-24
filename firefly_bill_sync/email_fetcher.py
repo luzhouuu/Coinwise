@@ -25,16 +25,23 @@ def decode_chinese_text(text_bytes, encodings=['utf-8', 'gb2312', 'gbk', 'gb1803
 class EmailFetcher:
     """邮件获取器"""
 
-    def __init__(self, username: str, password: str, imap_server: str = None):
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        imap_server: Optional[str] = None,
+        imap_port: Optional[int] = None,
+    ):
         self.username = username
         self.password = password
         self.imap_server = imap_server or Config.EMAIL_IMAP_SERVER
+        self.imap_port = imap_port or Config.EMAIL_IMAP_PORT
         self.mail = None
 
     def login(self) -> bool:
         """登录邮箱"""
         try:
-            self.mail = imaplib.IMAP4_SSL(self.imap_server)
+            self.mail = imaplib.IMAP4_SSL(self.imap_server, self.imap_port)
             self.mail.login(self.username, self.password)
             print(f"登录成功: {self.username}")
             return True

@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List
 
 from .base_parser import BaseBillParser
+from .description_cleaner import clean_description
 
 
 class ABCCreditCardParser(BaseBillParser):
@@ -71,7 +72,7 @@ class ABCCreditCardParser(BaseBillParser):
                     amount = -amount
 
                     # 描述
-                    description = cells[3]
+                    description = clean_description(cells[3])
 
                     result_data.append({
                         "date": date,

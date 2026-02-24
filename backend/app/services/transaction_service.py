@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 from sqlalchemy import and_, desc, func, text
 from sqlalchemy.orm import Session
 
-from app.database import CategoryModel, TransactionModel
+from app.database import CategoryModel, TransactionBlacklistModel, TransactionModel
 
 
 class TransactionService:
@@ -16,6 +16,15 @@ class TransactionService:
     def __init__(self, db: Session):
         """Initialize service with database session."""
         self.db = db
+
+    def _apply_blacklist_filter(self, query):
+        """排除黑名单中的交易"""
+        blacklist = self.db.query(TransactionBlacklistModel).filter(
+            TransactionBlacklistModel.is_active == 1
+        ).all()
+        for rule in blacklist:
+            query = query.filter(~TransactionModel.description.contains(rule.pattern))
+        return query
 
     def get_transactions(
         self,
@@ -144,13 +153,15 @@ class TransactionService:
         start_date: datetime,
         end_date: datetime,
     ) -> dict:
-        """Get summary statistics for date range."""
+        """Get summary statistics for date range (excluding blacklisted)."""
         query = self.db.query(TransactionModel).filter(
             and_(
                 TransactionModel.transaction_date >= start_date,
                 TransactionModel.transaction_date <= end_date,
             )
         )
+        # Apply blacklist filter
+        query = self._apply_blacklist_filter(query)
 
         total_expense = query.filter(
             TransactionModel.transaction_type == "withdrawal"
@@ -176,8 +187,8 @@ class TransactionService:
         end_date: datetime,
         transaction_type: str = "withdrawal",
     ) -> List[dict]:
-        """Get statistics grouped by category."""
-        results = (
+        """Get statistics grouped by category (excluding blacklisted)."""
+        query = (
             self.db.query(
                 CategoryModel.name,
                 func.sum(TransactionModel.amount).label("amount"),
@@ -191,9 +202,16 @@ class TransactionService:
                     TransactionModel.transaction_type == transaction_type,
                 )
             )
-            .group_by(CategoryModel.id)
-            .all()
         )
+
+        # Apply blacklist filter
+        blacklist = self.db.query(TransactionBlacklistModel).filter(
+            TransactionBlacklistModel.is_active == 1
+        ).all()
+        for rule in blacklist:
+            query = query.filter(~TransactionModel.description.contains(rule.pattern))
+
+        results = query.group_by(CategoryModel.id).all()
 
         # Calculate total for percentages
         total = sum(abs(r.amount) for r in results) or 1
@@ -214,7 +232,7 @@ class TransactionService:
         end_date: datetime,
         granularity: str = "day",
     ) -> List[dict]:
-        """Get trend data for charts, filling in missing periods with zeros."""
+        """Get trend data for charts, filling in missing periods with zeros (excluding blacklisted)."""
         from dateutil.relativedelta import relativedelta
 
         if granularity == "day":
@@ -227,7 +245,7 @@ class TransactionService:
             date_format = "%Y-%m"
             date_trunc = func.strftime("%Y-%m", TransactionModel.transaction_date)
 
-        results = (
+        query = (
             self.db.query(
                 date_trunc.label("date"),
                 func.sum(TransactionModel.amount).label("amount"),
@@ -240,10 +258,16 @@ class TransactionService:
                     TransactionModel.transaction_type == "withdrawal",
                 )
             )
-            .group_by(date_trunc)
-            .order_by(date_trunc)
-            .all()
         )
+
+        # Apply blacklist filter
+        blacklist = self.db.query(TransactionBlacklistModel).filter(
+            TransactionBlacklistModel.is_active == 1
+        ).all()
+        for rule in blacklist:
+            query = query.filter(~TransactionModel.description.contains(rule.pattern))
+
+        results = query.group_by(date_trunc).order_by(date_trunc).all()
 
         # Convert results to dict for easy lookup
         result_dict = {

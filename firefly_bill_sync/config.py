@@ -13,7 +13,8 @@ class Config:
     FIREFLY_API_TOKEN = os.getenv("FIREFLY_API_TOKEN", "")
 
     # Email accounts
-    EMAIL_IMAP_SERVER = os.getenv("EMAIL_IMAP_SERVER", "imap.qq.com")
+    EMAIL_IMAP_SERVER = os.getenv("EMAIL_IMAP_SERVER") or "imap.qq.com"
+    EMAIL_IMAP_PORT = int(os.getenv("EMAIL_IMAP_PORT") or "993")
 
     # 支持多个邮箱账户
     EMAIL_ACCOUNTS = []

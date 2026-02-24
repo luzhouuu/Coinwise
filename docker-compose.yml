@@ -19,6 +19,11 @@ services:
 
       # AI Analysis (optional)
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+
+      # Proxy for accessing Gemini API (for regions with restricted access)
+      - HTTP_PROXY=http://172.17.0.1:7890
+      - HTTPS_PROXY=http://172.17.0.1:7890
+      - NO_PROXY=localhost,127.0.0.1
     volumes:
       # Persist SQLite database
       - coinwise_data:/app/data

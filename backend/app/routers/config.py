@@ -9,10 +9,14 @@ from app.database import (
     CategoryModel,
     CategoryRuleModel,
     EmailAccountModel,
+    TransactionBlacklistModel,
     get_db,
     init_default_categories,
 )
 from app.models import (
+    BlacklistRule,
+    BlacklistRuleCreate,
+    BlacklistRulesResponse,
     Category,
     CategoryCreate,
     CategoryRule,
@@ -54,12 +58,13 @@ async def create_email_account(
     db: Session = Depends(get_db),
 ) -> EmailAccount:
     """Add a new email account."""
-    # Check if email already exists
+    # Check if email + bank_type combination already exists
     existing = db.query(EmailAccountModel).filter(
-        EmailAccountModel.email == data.email
+        EmailAccountModel.email == data.email,
+        EmailAccountModel.bank_type == data.bank_type
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Email account already exists")
+        raise HTTPException(status_code=400, detail="该邮箱已配置此银行类型")
 
     account = EmailAccountModel(
         email=data.email,
@@ -299,3 +304,69 @@ async def delete_category_rule(
     db.delete(rule)
     db.commit()
     return {"message": "Rule deleted", "id": rule_id}
+
+
+# Transaction Blacklist
+@router.get("/blacklist", response_model=BlacklistRulesResponse)
+async def get_blacklist_rules(
+    db: Session = Depends(get_db),
+) -> BlacklistRulesResponse:
+    """获取所有黑名单规则"""
+    rules = db.query(TransactionBlacklistModel).all()
+    return BlacklistRulesResponse(
+        rules=[
+            BlacklistRule(
+                id=r.id,
+                pattern=r.pattern,
+                reason=r.reason,
+                is_active=bool(r.is_active),
+            )
+            for r in rules
+        ]
+    )
+
+
+@router.post("/blacklist", response_model=BlacklistRule, status_code=201)
+async def create_blacklist_rule(
+    data: BlacklistRuleCreate,
+    db: Session = Depends(get_db),
+) -> BlacklistRule:
+    """添加黑名单规则"""
+    existing = db.query(TransactionBlacklistModel).filter(
+        TransactionBlacklistModel.pattern == data.pattern
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="该规则已存在")
+
+    rule = TransactionBlacklistModel(
+        pattern=data.pattern,
+        reason=data.reason,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    return BlacklistRule(
+        id=rule.id,
+        pattern=rule.pattern,
+        reason=rule.reason,
+        is_active=bool(rule.is_active),
+    )
+
+
+@router.delete("/blacklist/{rule_id}")
+async def delete_blacklist_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    """删除黑名单规则"""
+    rule = db.query(TransactionBlacklistModel).filter(
+        TransactionBlacklistModel.id == rule_id
+    ).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="规则不存在")
+
+    pattern = rule.pattern
+    db.delete(rule)
+    db.commit()
+    return {"message": "规则已删除", "pattern": pattern}

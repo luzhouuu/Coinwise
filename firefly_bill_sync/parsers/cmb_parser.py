@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from .base_parser import BaseBillParser
+from .description_cleaner import clean_description
 
 
 class CMBCreditCardParser(BaseBillParser):
@@ -47,7 +48,8 @@ class CMBCreditCardParser(BaseBillParser):
         for row in transcript:
             try:
                 # row[0] 是月日 (MMDD)
-                date_temp = datetime.strptime(row[0], "%m%d").replace(year=datetime.now().year)
+                base_year = bill_date_naive.year if bill_date_naive else datetime.now().year
+                date_temp = datetime.strptime(row[0], "%m%d").replace(year=base_year)
 
                 # 如果日期晚于账单日期，说明是去年
                 if bill_date_naive and date_temp > bill_date_naive:
@@ -58,12 +60,11 @@ class CMBCreditCardParser(BaseBillParser):
                 # row[3] 是金额，如 ¥1,000
                 amount_str = row[3].replace('¥', '').replace('\xa0', '').replace(',', '').strip()
 
-                # 跳过负数
-                if not amount_str or amount_str.startswith('-'):
+                if not amount_str:
                     continue
 
                 amount = float(amount_str)
-                description = row[2]
+                description = clean_description(row[2])
 
                 result_data.append({
                     "date": date_str,

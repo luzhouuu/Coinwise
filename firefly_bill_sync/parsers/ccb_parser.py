@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from typing import Optional
 
 from .base_parser import BaseBillParser
+from .description_cleaner import clean_description
 
 
 class CCBCreditCardParser(BaseBillParser):
@@ -25,19 +26,43 @@ class CCBCreditCardParser(BaseBillParser):
         """
         soup = BeautifulSoup(html_content, "html.parser")
 
-        # 查找包含"交易日"的表格
-        candidate_tables = []
+        # 查找交易明细表格
+        # 策略：找到包含6列表头行 ['交易日', '银行记账日', ...] 且有8列数据行的表格
         tables = soup.find_all("table")
-        for table in tables:
-            if table.find(string=re.compile("交易日")):
-                candidate_tables.append(table)
+        target_table = None
+        header_keywords = ['交易日', '银行记账日', '卡号后四位', '交易描述']
 
-        if not candidate_tables:
+        best_table = None
+        best_count = 0
+
+        for table in tables:
+            rows = table.find_all("tr", recursive=False)  # 只找直接子行，避免嵌套
+            if not rows:
+                rows = table.find_all("tr")
+
+            has_header = False
+            data_count = 0
+
+            for tr in rows:
+                cells = tr.find_all(["td", "th"])
+                cell_texts = [c.get_text(strip=True) for c in cells]
+
+                # 检查是否是表头行（6列且包含关键词）
+                if len(cells) == 6 and all(kw in ' '.join(cell_texts) for kw in header_keywords):
+                    has_header = True
+                # 检查是否是数据行（8列）
+                elif len(cells) == 8:
+                    data_count += 1
+
+            if has_header and data_count > best_count:
+                best_count = data_count
+                best_table = table
+
+        target_table = best_table
+
+        if not target_table:
             print("未找到交易明细表格")
             return pd.DataFrame(columns=["date", "amount", "description"])
-
-        # 选取行数最多的表格
-        target_table = max(candidate_tables, key=lambda t: len(t.find_all("tr")))
 
         # 提取所有行
         rows = []
@@ -117,14 +142,14 @@ class CCBCreditCardParser(BaseBillParser):
         for row in data_rows:
             try:
                 date = row[0]  # 交易日
-                description = row[3]  # 交易描述
+                description = clean_description(row[3])  # 交易描述
                 amount_str = row[7]  # 结算币/金额
 
                 # 清理金额
                 amount_str = amount_str.replace(',', '').replace('¥', '').replace('\xa0', '').strip()
 
-                # 跳过负数（退款）或无效金额
-                if not amount_str or amount_str.startswith('-'):
+                # 跳过无效金额
+                if not amount_str:
                     continue
 
                 amount = float(amount_str)

@@ -1,6 +1,9 @@
 """Pydantic models for API request/response."""
 
 from app.models.config import (
+    BlacklistRule,
+    BlacklistRuleCreate,
+    BlacklistRulesResponse,
     Category,
     CategoryCreate,
     CategoryRule,
@@ -57,6 +60,9 @@ __all__ = [
     "CategoryRuleCreate",
     "CategoryRulesResponse",
     "CategoryRuleUpdate",
+    "BlacklistRule",
+    "BlacklistRuleCreate",
+    "BlacklistRulesResponse",
     "StatisticsSummary",
     "CategoryStat",
     "TrendDataPoint",

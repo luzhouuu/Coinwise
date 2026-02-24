@@ -103,3 +103,30 @@ class CategoryRuleUpdate(BaseModel):
     pattern: Optional[str] = Field(None, description="Matching pattern")
     category_id: Optional[int] = Field(None, description="Target category ID")
     priority: Optional[int] = Field(None, description="Rule priority")
+
+
+class BlacklistRule(BaseModel):
+    """交易黑名单规则"""
+
+    id: int = Field(..., description="Rule ID")
+    pattern: str = Field(..., description="匹配模式（交易描述中包含此字符串则排除）")
+    reason: Optional[str] = Field(None, description="排除原因说明")
+    is_active: bool = Field(True, description="是否启用")
+
+    class Config:
+        """Pydantic config."""
+
+        from_attributes = True
+
+
+class BlacklistRuleCreate(BaseModel):
+    """Request body for creating blacklist rule."""
+
+    pattern: str = Field(..., min_length=1, description="匹配模式")
+    reason: Optional[str] = Field(None, description="排除原因说明")
+
+
+class BlacklistRulesResponse(BaseModel):
+    """Response containing all blacklist rules."""
+
+    rules: List[BlacklistRule] = Field(..., description="黑名单规则列表")
